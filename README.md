@@ -32,7 +32,7 @@ uv run tab-converter merge part1.tab part2.tab part3.tab -o combined.tab
 
 ## Configuration
 
-The config file specifies the target tuning in JSON format:
+While many popular tunings for guitar, bass, and Chapman Stick are contained in `tunings/`, the config file specifies the target tuning in JSON format:
 
 ```json
 {
@@ -51,11 +51,3 @@ E4|--5--7--9--|
 B3|--5--7--8--|
 G3|--6--7--9--|
 ```
-
-## Chapman Stick 12-String Tuning
-
-The included `config.json` contains the standard 36" scale Chapman Stick tuning:
-- Bass strings (low to high): Bb1, Eb2, Ab2, C#3, F#3, B3
-- Melody strings (high to low): Bb3, Eb4, Ab4, C#5, F#5, B5
-
-When merging files, strings are automatically sorted by pitch (highest to lowest) for proper musical notation.
