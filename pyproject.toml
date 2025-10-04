@@ -1,0 +1,15 @@
+[project]
+name = "tab-converter"
+version = "0.1.0"
+description = "Convert guitar tabs between tunings and merge multiple tab files"
+authors = [{name = "Your Name"}]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+tab-converter = "tab_converter:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
