@@ -19,18 +19,16 @@ uv sync
 
 ## Usage
 
-### Merge multiple tab files
-
 Merge bass and melody parts for Chapman Stick or similar instruments:
 
 ```bash
-uv run tabconverter.py merge bass.tab guitar.tab -o stick.tab -c config.json
+uv run tabconverter.py bass.tab guitar.tab -o stick.tab -c config.json
 ```
 
 With explicit source tunings:
 
 ```bash
-uv run tabconverter.py merge bass.tab guitar.tab \
+uv run tabconverter.py bass.tab guitar.tab \
   -o stick.tab \
   -c config.json \
   -s E1,A1,D2,G2 \
@@ -41,13 +39,13 @@ Verbosity levels:
 
 ```bash
 # Basic info (file detection, sections found)
-uv run tabconverter.py merge bass.tab guitar.tab -o stick.tab -c config.json -v
+uv run tabconverter.py bass.tab guitar.tab -o stick.tab -c config.json -v
 
 # Detailed note mapping (shows which notes map to which strings/frets)
-uv run tabconverter.py merge bass.tab guitar.tab -o stick.tab -c config.json -vv
+uv run tabconverter.py bass.tab guitar.tab -o stick.tab -c config.json -vv
 
 # Full debug output (includes line scanning details)
-uv run tabconverter.py merge bass.tab guitar.tab -o stick.tab -c config.json -vvv
+uv run tabconverter.py bass.tab guitar.tab -o stick.tab -c config.json -vvv
 ```
 
 ## Configuration

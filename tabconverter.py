@@ -517,50 +517,39 @@ def merge_tab_files(file_paths, output_path, config=None, source_tunings_list=No
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Convert guitar tabs from one tuning to another and merge multiple tab files'
+        description='Merge guitar tabs from multiple tunings into a single multi-string instrument tab'
     )
     
-    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
-    
-    # Merge command (primary use case)
-    merge_parser = subparsers.add_parser('merge', help='Merge multiple tab files')
-    merge_parser.add_argument('inputs', type=Path, nargs='+', 
-                             help='Input tab files to merge')
-    merge_parser.add_argument('-o', '--output', type=Path, required=True,
-                             help='Output merged tab file')
-    merge_parser.add_argument('-c', '--config', type=Path, required=True,
-                             help='Configuration file with target tuning')
-    merge_parser.add_argument('-s', '--source-tuning', action='append',
-                             help='Source tuning for input file as comma-separated notes (e.g., "E1,A1,D2,G2"). '
-                                  'Use multiple -s flags in order of input files. '
-                                  'If not provided, will attempt to detect from files')
-    merge_parser.add_argument('-v', '--verbose', action='count', default=0,
-                             help='Increase verbosity (-v for basic, -vv for detailed mapping, -vvv for all debug)')
+    parser.add_argument('inputs', type=Path, nargs='+', 
+                        help='Input tab files to merge')
+    parser.add_argument('-o', '--output', type=Path, required=True,
+                        help='Output merged tab file')
+    parser.add_argument('-c', '--config', type=Path, required=True,
+                        help='Configuration file with target tuning')
+    parser.add_argument('-s', '--source-tuning', action='append',
+                        help='Source tuning for input file as comma-separated notes (e.g., "E1,A1,D2,G2"). '
+                             'Use multiple -s flags in order of input files. '
+                             'If not provided, will attempt to detect from files')
+    parser.add_argument('-v', '--verbose', action='count', default=0,
+                        help='Increase verbosity (-v for basic, -vv for detailed mapping, -vvv for all debug)')
     
     args = parser.parse_args()
     
-    if not args.command:
-        parser.print_help()
+    try:
+        config = load_config(args.config)
+    except Exception as e:
+        print(f"Error loading config: {e}", file=sys.stderr)
         return 1
     
-    if args.command == 'merge':
-        try:
-            config = load_config(args.config)
-        except Exception as e:
-            print(f"Error loading config: {e}", file=sys.stderr)
-            return 1
-        
-        # Parse source tunings if provided (comma-separated format)
-        source_tunings_list = None
-        if hasattr(args, 'source_tuning') and args.source_tuning:
-            source_tunings_list = []
-            for tuning_str in args.source_tuning:
-                tuning = [note.strip() for note in tuning_str.split(',')]
-                source_tunings_list.append(tuning)
-        
-        return merge_tab_files(args.inputs, args.output, config, source_tunings_list, args.verbose)
+    # Parse source tunings if provided (comma-separated format)
+    source_tunings_list = None
+    if args.source_tuning:
+        source_tunings_list = []
+        for tuning_str in args.source_tuning:
+            tuning = [note.strip() for note in tuning_str.split(',')]
+            source_tunings_list.append(tuning)
     
-    return 0
+    return merge_tab_files(args.inputs, args.output, config, source_tunings_list, args.verbose)
 
 
 if __name__ == '__main__':
