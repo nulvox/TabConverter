@@ -1,3 +1,7 @@
 {
-  "target_tuning": ["B0", "E1", "A1", "D2", "G2"]
+  "target_tuning": ["B0", "E1", "A1", "D2", "G2"],
+  "max_fret": 24,
+  "bass_max_fret": 24,
+  "melody_min_fret": 0,
+  "hand_separation": 0
 }

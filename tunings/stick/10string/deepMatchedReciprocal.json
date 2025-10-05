@@ -1,3 +1,7 @@
 {
-  "target_tuning": ["Bb3", "F3", "C3", "G2", "D2", "D2", "G2", "C3", "F3", "Bb3"]
+  "target_tuning": ["Bb3", "F3", "C3", "G2", "D2", "D2", "G2", "C3", "F3", "Bb3"],
+  "max_fret": 24,
+  "bass_max_fret": 12,
+  "melody_min_fret": 7,
+  "hand_separation": 4
 }
