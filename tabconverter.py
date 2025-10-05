@@ -171,7 +171,9 @@ def extract_note_events(lines, source_tuning, verbosity=0):
                         j += 1
                     
                     fret = int(num_str)
-                    section_events[(i, string_idx)] = fret
+                    # Only accept reasonable fret numbers (0-24)
+                    if fret <= 24:
+                        section_events[(i, string_idx)] = fret
                     i = j
                 else:
                     i += 1
@@ -246,15 +248,15 @@ def find_best_target_string(note_pitch, part_type, target_tuning, occupied_strin
         # Calculate preference score (lower is better)
         is_melody_string = tgt_idx >= melody_start
         
-        # Prefer appropriate string region for part type
+        # Strong preference for staying in the appropriate string region
         if prefer_low_strings and not is_melody_string:
-            region_penalty = 0  # Bass prefers bass strings
+            region_penalty = 0  # Bass strongly prefers bass strings
         elif prefer_low_strings and is_melody_string:
-            region_penalty = 10  # Bass can use melody strings but penalized
+            region_penalty = 100  # Bass should avoid melody strings (heavy penalty)
         elif not prefer_low_strings and is_melody_string:
-            region_penalty = 0 if prefer_melody_strings else 5  # Melody prefers melody strings
+            region_penalty = 0  # Melody strongly prefers melody strings
         elif not prefer_low_strings and not is_melody_string:
-            region_penalty = 5 if prefer_melody_strings else 0  # Melody can use bass strings
+            region_penalty = 100  # Melody should avoid bass strings (heavy penalty)
         else:
             region_penalty = 0
         
@@ -278,43 +280,56 @@ def try_octave_shifts(note_pitch, part_type, target_tuning, occupied_strings,
                      config, other_hand_frets=None, prefer_melody_strings=True):
     """Try finding a playable position by shifting octaves.
     
+    Tries in this order:
+    1. Current octave in preferred string region
+    2. ±1 octave in preferred string region  
+    3. ±2 octaves in preferred string region
+    4. Current octave in any region (fallback)
+    5. ±1 octave in any region (fallback)
+    6. ±2 octaves in any region (fallback)
+    
     Returns:
         (target_string_idx, fret) or (None, None) if impossible
     """
-    # Try current octave first
+    target_semi = parse_tuning(target_tuning)
+    melody_start = len(target_semi) // 2
+    prefer_low = (part_type == 'bass')
+    
+    # Try current octave in preferred region first
     result = find_best_target_string(note_pitch, part_type, target_tuning, 
                                      occupied_strings, config, other_hand_frets, 
                                      prefer_melody_strings)
     if result[0] is not None:
-        return result
+        # Check if we stayed in preferred region
+        is_melody_string = result[0] >= melody_start
+        
+        # Accept if in preferred region
+        if (prefer_low and not is_melody_string) or (not prefer_low and is_melody_string):
+            return result
     
-    # Try up one octave
-    result = find_best_target_string(note_pitch + 12, part_type, target_tuning, 
-                                     occupied_strings, config, other_hand_frets, 
-                                     prefer_melody_strings)
+    # Try octave shifts in preferred region before accepting wrong region
+    for octave_shift in [12, -12, 24, -24]:
+        shifted_result = find_best_target_string(note_pitch + octave_shift, part_type, 
+                                                 target_tuning, occupied_strings, config, 
+                                                 other_hand_frets, prefer_melody_strings)
+        if shifted_result[0] is not None:
+            # Check if in preferred region
+            is_melody_string = shifted_result[0] >= melody_start
+            if (prefer_low and not is_melody_string) or (not prefer_low and is_melody_string):
+                return shifted_result
+    
+    # If we got here, nothing worked in preferred region
+    # Accept the original result even if wrong region, or try more octaves as last resort
     if result[0] is not None:
         return result
     
-    # Try down one octave
-    result = find_best_target_string(note_pitch - 12, part_type, target_tuning, 
-                                     occupied_strings, config, other_hand_frets, 
-                                     prefer_melody_strings)
-    if result[0] is not None:
-        return result
-    
-    # Try up two octaves
-    result = find_best_target_string(note_pitch + 24, part_type, target_tuning, 
-                                     occupied_strings, config, other_hand_frets, 
-                                     prefer_melody_strings)
-    if result[0] is not None:
-        return result
-    
-    # Try down two octaves
-    result = find_best_target_string(note_pitch - 24, part_type, target_tuning, 
-                                     occupied_strings, config, other_hand_frets, 
-                                     prefer_melody_strings)
-    if result[0] is not None:
-        return result
+    # Last resort: try all octave shifts even in wrong region
+    for octave_shift in [12, -12, 24, -24]:
+        shifted_result = find_best_target_string(note_pitch + octave_shift, part_type, 
+                                                 target_tuning, occupied_strings, config, 
+                                                 other_hand_frets, prefer_melody_strings)
+        if shifted_result[0] is not None:
+            return shifted_result
     
     return None, None
 
@@ -452,28 +467,40 @@ def merge_tab_files(file_paths, output_path, config=None, source_tunings_list=No
         if section_idx > 0:
             merged_lines.append("")
         
+        # First pass: determine width needed at each column position
+        col_widths = {}
+        for col in range(max_col + 1):
+            max_width = 1  # At least one dash
+            for tgt_idx in range(num_target_strings):
+                if tgt_idx in target_section and col in target_section[tgt_idx]:
+                    fret = target_section[tgt_idx][col]
+                    if fret == 'X':
+                        width = 1
+                    else:
+                        width = len(str(fret))
+                    max_width = max(max_width, width)
+            col_widths[col] = max_width
+        
         # Build tab lines for each target string (high to low)
         for tgt_idx in reversed(range(num_target_strings)):
             label = target_displays[tgt_idx].ljust(max_label_width)
             
-            # Build content string
-            if tgt_idx in target_section:
-                content = ['-'] * (max_col + 1)
-                for col, fret in target_section[tgt_idx].items():
+            # Build content string with proper spacing
+            content = []
+            for col in range(max_col + 1):
+                col_width = col_widths[col]
+                
+                if tgt_idx in target_section and col in target_section[tgt_idx]:
+                    fret = target_section[tgt_idx][col]
                     if fret == 'X':
-                        content[col] = 'X'
+                        content.append('X'.ljust(col_width, '-'))
                     else:
                         fret_str = str(fret)
-                        content[col] = fret_str[0]
-                        # Handle multi-digit frets
-                        for i, char in enumerate(fret_str[1:], 1):
-                            if col + i < len(content):
-                                content[col + i] = char
-                content_str = ''.join(content)
-            else:
-                content_str = '-' * (max_col + 1)
+                        content.append(fret_str.ljust(col_width, '-'))
+                else:
+                    content.append('-' * col_width)
             
-            merged_lines.append(f"{label}|{content_str}")
+            merged_lines.append(f"{label}|{''.join(content)}")
     
     # Write output file
     try:
