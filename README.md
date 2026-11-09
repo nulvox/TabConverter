@@ -4,12 +4,11 @@ Intelligently merge guitar/bass tabs for Chapman Stick and other multi-string in
 
 ## Features
 
-- **Temporal note allocation**: Maps notes to strings based on when they're played, not just pitch
-- **Automatic hand separation**: Enforces configurable fret gaps between bass and melody parts to prevent hand collisions
-- **Smart string selection**: Prioritizes bass strings for bass parts and melody strings for melody parts, with fallback options
-- **Octave shifting**: Automatically transposes notes up/down octaves when needed to fit playable fret ranges
-- **Collision avoidance**: Ensures no two parts use the same string at the same time
-- **Auto-detection**: Detects source tunings and part types (bass/melody) automatically
+- **Temporal note allocation & voice leading**: Maps notes to strings with horizontal fret-hand continuity and compact chord voicings
+- **Automatic hand separation**: Enforces configurable fret gaps between bass and melody parts to prevent physical hand collisions
+- **Smart string selection**: Prioritizes bass strings for bass parts and melody strings for melody parts, relaxing fret bounds before resorting to octave transposition
+- **Header-aware section alignment**: Aligns song sections (`Intro`, `Verse`, `Chorus`, `Bridge`, `Solo`, `Outro`) across files even when section counts differ, and synchronizes measure barlines (`|`)
+- **Zero-config tuning inference**: Automatically detects or infers source tunings from standard bare-label internet tabs (`e| B| G| D| A| E|`, `G| D| A| E|`, Drop D, etc.) as well as octave-annotated tabs
 
 ## Installation
 
@@ -25,14 +24,30 @@ Merge bass and melody parts for Chapman Stick or similar instruments:
 uv run tabconverter.py bass.tab guitar.tab -o stick.tab -c config.json
 ```
 
-With explicit source tunings:
+The `-c` (or `-t`/`--target-tuning`) option accepts a path to a JSON config file, the name of a bundled tuning from `tunings/`, a shorthand alias (`stick`, `stick12`, `guitar`, `dropd`, `dadgad`, `bass`, `bass5`), or inline comma-separated notes:
+
+```bash
+uv run tabconverter.py bass.tab guitar.tab -o stick.tab -c stick/12string/classic
+uv run tabconverter.py guitar.tab -c dropd
+uv run tabconverter.py guitar.tab -t D2,A2,D3,G3,A3,D4
+```
+
+List all bundled tunings:
+
+```bash
+uv run tabconverter.py --list-tunings
+```
+
+If `-o` is omitted, the converted/merged tab is printed to stdout.
+
+With explicit source tunings (accepts presets, aliases, or comma-separated notes in either low-to-high or high-to-low order):
 
 ```bash
 uv run tabconverter.py bass.tab guitar.tab \
   -o stick.tab \
-  -c config.json \
-  -s E1,A1,D2,G2 \
-  -s E2,A2,D3,G3,B3,E4
+  -c stick \
+  -s bass \
+  -s guitar
 ```
 
 Verbosity levels:
@@ -69,6 +84,7 @@ Config files specify target tuning and playability constraints. Example for Chap
 - **bass_max_fret**: Maximum fret for bass/left hand parts (default: 12)
 - **melody_min_fret**: Minimum fret for melody/right hand parts (default: 7)
 - **hand_separation**: Minimum fret gap between hands to prevent collisions (default: 4)
+- **melody_strings** (optional): Array of string indices (0-based, into `target_tuning`) that form the melody group. If omitted, the tuning is split in half and the half with the higher average pitch is treated as the melody group.
 
 Popular tunings are included in `tunings/` directory.
 
@@ -97,10 +113,25 @@ A1|--0--0--1--1--2--2--0--0--0--0--1--1--2--2--3--3--2----------|
 E1|-------------------------------------------------------------|
 ```
 
-Note labels must match the source tuning (either with or without octave numbers). The converter auto-detects tunings from the note labels in the file.
+Note labels may include octave numbers (`E2|`), omit them (`E|`), or use the
+common lowercase high-string convention (`e|`). Duplicate labels (e.g. the two
+E strings of a guitar) are resolved automatically regardless of whether a
+declared tuning is listed high-to-low or low-to-high. When octave numbers are
+omitted from the tab lines, standard guitar/bass octaves are inferred
+automatically; you can override them with `-s`.
+
+Text lines immediately preceding a tab section (e.g. `Chorus:`) are preserved
+as section headers and used to align sections across multiple files.
+
+## Development
+
+Run the test suite with:
+
+```bash
+uv run --group dev pytest
+```
 
 ## Limitations
 
 - Notes that cannot be mapped even with octave shifting will appear as 'X'
-- Source tunings must be detectable from the file or specified via `-s` flags
-- All input files in a merge operation must have the same number of sections (or the tool will pad with empty sections)
+- Playing technique markers (hammer-ons, pull-offs, slides, bends) are not carried over to the output

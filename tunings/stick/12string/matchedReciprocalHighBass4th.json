@@ -1,5 +1,6 @@
 {
-  "target_tuning": ["C4", "G3", "D3", "A2", "E2", "B1", "B1", "E2", "A2", "D3", "G3", "Bb3"],
+  "target_tuning": ["C4", "G3", "D3", "A2", "E2", "B1", "B0", "E1", "A1", "D2", "G2", "Bb2"],
+  "melody_strings": [0, 1, 2, 3, 4, 5],
   "max_fret": 24,
   "bass_max_fret": 12,
   "melody_min_fret": 7,
