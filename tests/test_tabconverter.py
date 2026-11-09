@@ -409,3 +409,268 @@ class TestEndToEnd:
         assert idx is not None
         assert tc.parse_tuning(tuning)[idx] + fret == pitch
 
+
+class TestTechniquesAndArticulations:
+    def test_bend_not_split_into_two_notes_and_remapped(self, tmp_path):
+        # 7b9 on G3 (pitch G3+7 = D4, bent +2 st to E4)
+        # On Drop D or DADGAD where G3 is still G3, 7b9 stays 7b9;
+        # On a 1-string D3 target, D4 is fret 12, so 7b9 becomes 12b14!
+        tab = tmp_path / 'bend.tab'
+        tab.write_text('G3|--7b9--|\n')
+        sections = tc.extract_note_events(['G3|--7b9--|'], ['G3'])
+        _, events = sections[0]
+        # Must only have 1 note event at col 2 (fret 7), NOT a second note '9' at col 4
+        assert events == {(2, 0): 7}
+
+        out = tmp_path / 'out.tab'
+        rc = tc.merge_tab_files([tab], out, tc.load_config('D3'))
+        assert rc == 0
+        assert '12b14' in out.read_text()
+
+    def test_legato_hammer_pull_slide_stay_on_same_string(self, tmp_path):
+        # On B3 (47), 9h11 is G#4 (56) -> A#4 (58). Without legato linking, 56 lands on
+        # A3 fret 11 while 58 would jump to D4 fret 8 (closer to fret_center=10).
+        # With legato linking, 58 stays on A3 fret 13 so 11h13 is playable on one string!
+        tab = tmp_path / 'legato.tab'
+        tab.write_text(
+            'E4|--------------------|\n'
+            'B3|--9h11--11p9--9/11--|\n'
+            'G3|--------------------|\n'
+            'D3|--------------------|\n'
+            'A2|--------------------|\n'
+            'E2|--------------------|\n'
+        )
+        out = tmp_path / 'out.tab'
+        rc = tc.merge_tab_files([tab], out, tc.load_config('stick/10string/classic'))
+        assert rc == 0
+        text = out.read_text()
+        assert '11h13' in text
+        assert '13p11' in text
+        assert '11/13' in text
+
+    def test_vibrato_and_dead_notes_preserved(self, tmp_path):
+        tab = tmp_path / 'vib.tab'
+        tab.write_text(
+            'E4|--5~~--x--|\n'
+            'B3|----------|\n'
+            'G3|----------|\n'
+            'D3|----------|\n'
+            'A2|----------|\n'
+            'E2|----------|\n'
+        )
+        out = tmp_path / 'out.tab'
+        rc = tc.merge_tab_files([tab], out, tc.load_config('guitar'))
+        assert rc == 0
+        text = out.read_text()
+        assert '5~~' in text
+        assert 'x' in text
+
+
+class TestStructuredFormatsAndWrapping:
+    @staticmethod
+    def _build_test_midi(path):
+        import struct
+
+        def vlq(n):
+            out = [n & 0x7F]
+            n >>= 7
+            while n:
+                out.append((n & 0x7F) | 0x80)
+                n >>= 7
+            return bytes(reversed(out))
+
+        def make_track(name, ch, prog, note_events):
+            body = bytearray()
+            # Track name meta event
+            name_b = name.encode('utf-8')
+            body += b'\x00\xff\x03' + vlq(len(name_b)) + name_b
+            # Program change
+            body += b'\x00' + bytes([0xC0 | ch, prog])
+            last_t = 0
+            for tick, midi_note, dur in note_events:
+                body += vlq(tick - last_t) + bytes([0x90 | ch, midi_note, 100])
+                body += vlq(dur) + bytes([0x80 | ch, midi_note, 0])
+                last_t = tick + dur
+            # End of track
+            body += b'\x00\xff\x2f\x00'
+            return b'MTrk' + struct.pack('>I', len(body)) + bytes(body)
+
+        header = b'MThd' + struct.pack('>IHhH', 6, 1, 3, 480)
+        # Bass track: E1 (MIDI 28), A1 (MIDI 33)
+        t_bass = make_track('Fingered Bass', 1, 33, [(0, 28, 240), (480, 33, 240)])
+        # Guitar track: E4 (MIDI 64), G4 (MIDI 67)
+        t_gtr = make_track('Lead Guitar', 0, 29, [(0, 64, 240), (480, 67, 240)])
+        # Percussion track on channel 9 (should be skipped by default)
+        t_drums = make_track('Drums', 9, 0, [(0, 36, 240)])
+        path.write_bytes(header + t_bass + t_gtr + t_drums)
+
+    def test_midi_list_tracks_and_merge(self, tmp_path):
+        mid = tmp_path / 'song.mid'
+        self._build_test_midi(mid)
+
+        tracks = tc.list_tracks_in_file(mid)
+        assert len(tracks) == 3
+        assert tracks[0].part_type == 'bass'
+        assert tracks[1].part_type == 'melody'
+        assert tracks[2].part_type == 'percussion'
+
+        out = tmp_path / 'stick.tab'
+        rc = tc.merge_tab_files([mid], out, tc.load_config('stick/10string/classic'))
+        assert rc == 0
+        text = out.read_text()
+        assert 'X' not in text
+        placed = re.findall(r'\d+', text)
+        assert len(placed) == 4  # 2 bass notes + 2 guitar notes (drums skipped)
+
+        # Test --tracks selector for only track 2
+        out_gtr = tmp_path / 'gtr_only.tab'
+        rc2 = tc.merge_tab_files([mid], out_gtr, tc.load_config('stick'), track_selector='2')
+        assert rc2 == 0
+        assert len(re.findall(r'\d+', out_gtr.read_text())) == 2
+
+    def test_musicxml_and_mxl_merge(self, tmp_path):
+        import zipfile
+
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1"><part-name>Electric Guitar</part-name></score-part>
+    <score-part id="P2"><part-name>Bass</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+      </attributes>
+      <note>
+        <pitch><step>E</step><octave>4</octave></pitch>
+        <duration>2</duration>
+      </note>
+      <note>
+        <pitch><step>G</step><octave>4</octave></pitch>
+        <duration>2</duration>
+      </note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+      </attributes>
+      <note>
+        <pitch><step>E</step><octave>1</octave></pitch>
+        <duration>2</duration>
+      </note>
+      <note>
+        <pitch><step>A</step><octave>1</octave></pitch>
+        <duration>2</duration>
+      </note>
+    </measure>
+  </part>
+</score-partwise>
+"""
+        mxl = tmp_path / 'score.mxl'
+        with zipfile.ZipFile(mxl, 'w') as zf:
+            zf.writestr('score.musicxml', xml_content)
+
+        tracks = tc.list_tracks_in_file(mxl)
+        assert len(tracks) == 2
+        assert tracks[0].part_type == 'melody'
+        assert tracks[1].part_type == 'bass'
+
+        out = tmp_path / 'out.tab'
+        rc = tc.merge_tab_files([mxl], out, tc.load_config('stick/10string/classic'))
+        assert rc == 0
+        assert len(re.findall(r'\d+', out.read_text())) == 4
+
+    def test_guitar_pro_gp_archive_merge(self, tmp_path):
+        import zipfile
+
+        gpif_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<GPIF>
+  <Tracks>
+    <Track id="0">
+      <Name>Guitar</Name>
+      <Properties>
+        <Property name="Tuning"><Pitches>40 45 50 55 59 64</Pitches></Property>
+      </Properties>
+    </Track>
+    <Track id="1">
+      <Name>Bass</Name>
+      <Properties>
+        <Property name="Tuning"><Pitches>28 33 38 43</Pitches></Property>
+      </Properties>
+    </Track>
+  </Tracks>
+  <MasterBars>
+    <MasterBar><Bars>0 1</Bars></MasterBar>
+  </MasterBars>
+  <Bars>
+    <Bar id="0"><Voices>0</Voices></Bar>
+    <Bar id="1"><Voices>1</Voices></Bar>
+  </Bars>
+  <Voices>
+    <Voice id="0"><Beats>0</Beats></Voice>
+    <Voice id="1"><Beats>1</Beats></Voice>
+  </Voices>
+  <Beats>
+    <Beat id="0"><Rhythm ref="0"/><Notes>0</Notes></Beat>
+    <Beat id="1"><Rhythm ref="0"/><Notes>1</Notes></Beat>
+  </Beats>
+  <Rhythms>
+    <Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm>
+  </Rhythms>
+  <Notes>
+    <Note id="0">
+      <Properties>
+        <Property name="String"><String>5</String></Property>
+        <Property name="Fret"><Fret>0</Fret></Property>
+      </Properties>
+    </Note>
+    <Note id="1">
+      <Properties>
+        <Property name="String"><String>1</String></Property>
+        <Property name="Fret"><Fret>2</Fret></Property>
+      </Properties>
+    </Note>
+  </Notes>
+</GPIF>
+"""
+        gp_file = tmp_path / 'song.gp'
+        with zipfile.ZipFile(gp_file, 'w') as zf:
+            zf.writestr('Content/score.gpif', gpif_xml)
+
+        tracks = tc.list_tracks_in_file(gp_file)
+        assert len(tracks) == 2
+        out = tmp_path / 'out.tab'
+        rc = tc.merge_tab_files([gp_file], out, tc.load_config('stick/10string/classic'))
+        assert rc == 0
+        assert len(re.findall(r'\d+', out.read_text())) == 2
+
+    def test_line_wrapping_at_barlines(self, tmp_path):
+        tab = tmp_path / 'wide.tab'
+        m = '--0--2--4--5--'
+        tab.write_text(
+            f'A2|{m}|{m}|{m}|{m}|\n'
+            f'E2|{m}|{m}|{m}|{m}|\n'
+        )
+        out = tmp_path / 'wrapped.tab'
+        rc = tc.merge_tab_files([tab], out, tc.load_config('bass'), wrap_width=36)
+        assert rc == 0
+        lines = [l for l in out.read_text().splitlines() if l.strip()]
+        assert all(len(l) <= 36 for l in lines)
+        # Wrapped into multiple 4-string systems
+        assert len(lines) >= 8
+
+    def test_modular_subpackages_importable(self):
+        from tabconverter import cli, music, parser, renderer, solver
+
+        assert callable(music.note_to_semitones)
+        assert callable(parser.extract_note_events)
+        assert callable(solver.find_best_target_string)
+        assert callable(renderer.render_merged_sections)
+        assert callable(cli.main)
+
+
