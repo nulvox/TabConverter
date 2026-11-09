@@ -14,6 +14,7 @@
     "B3"
   ],
   "max_fret": 24,
+  "melody_strings": [6, 7, 8, 9, 10, 11],
   "bass_max_fret": 12,
   "melody_min_fret": 7,
   "hand_separation": 4
