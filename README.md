@@ -5,6 +5,8 @@ Intelligently merge guitar/bass tabs for Chapman Stick and other multi-string in
 ## Features
 
 - **Temporal note allocation & voice leading**: Maps notes to strings with horizontal fret-hand continuity and compact chord voicings
+- **Structured multi-track score inputs**: Directly converts multi-track **MIDI (`.mid`)**, **MusicXML (`.musicxml`, `.xml`, `.mxl`)**, and **Guitar Pro (`.gp`)** files where Guitar and Bass tracks share an exact musical timeline
+- **Articulation & technique preservation**: Preserves hammer-ons (`h`), pull-offs (`p`), slides (`/`, `\`), bends (`7b9`), vibrato (`~`), and dead notes (`x`), keeping connected legato notes on the same target string
 - **Automatic hand separation**: Enforces configurable fret gaps between bass and melody parts to prevent physical hand collisions
 - **Smart string selection**: Prioritizes bass strings for bass parts and melody strings for melody parts, relaxing fret bounds before resorting to octave transposition
 - **Header-aware section alignment**: Aligns song sections (`Intro`, `Verse`, `Chorus`, `Bridge`, `Solo`, `Outro`) across files even when section counts differ, and synchronizes measure barlines (`|`)
@@ -48,6 +50,19 @@ uv run tabconverter.py bass.tab guitar.tab \
   -c stick \
   -s bass \
   -s guitar
+```
+
+Convert a multi-track MIDI, MusicXML, or Guitar Pro (`.gp`) file directly (automatically skips percussion tracks and merges bass + melody tracks):
+
+```bash
+# Inspect tracks in a structured file
+uv run tabconverter.py song.mid --list-tracks
+
+# Merge all pitched tracks onto a 10-string Chapman Stick, wrapped to 80 columns
+uv run tabconverter.py song.mid -c stick -o stick.tab --wrap 80
+
+# Select specific tracks by 1-based index or name
+uv run tabconverter.py song.gp --tracks 1,2 -c stick12 -o stick.tab
 ```
 
 Verbosity levels:
@@ -134,4 +149,4 @@ uv run --group dev pytest
 ## Limitations
 
 - Notes that cannot be mapped even with octave shifting will appear as 'X'
-- Playing technique markers (hammer-ons, pull-offs, slides, bends) are not carried over to the output
+- Legacy binary Guitar Pro files (`.gp3`–`.gp5`) require `pyguitarpro` (`pip install pyguitarpro`), whereas GP7/8 (`.gp`), MusicXML (`.musicxml`/`.mxl`), and MIDI (`.mid`) are supported natively with zero external dependencies
